@@ -4,11 +4,18 @@ pragma solidity ^0.8.0;
 import "hardhat/console.sol";
 
 contract DAO {
+  string public constant name = "Collector DAO";
   uint256 public constant PROPOSAL_MAX_OPERATIONS = 10; // cant have too many function calls
   uint256 public constant QUORUM_DIVISOR = 4; // 25%
   uint256 public constant VOTING_PERIOD_LENGTH = 80640; // two weeks
   uint256 public constant VOTING_DELAY_LENGTH = 1;
   uint256 public constant MEMBERSHIP_FEE = 1 ether;
+  bytes32 public constant DOMAIN_TYPEHASH =
+    keccak256(
+      "EIP712Domain(string name,uint256 chainId,address verifyingContract)"
+    );
+  bytes32 public constant VOTE_TYPEHASH =
+    keccak256("Vote(uint256 proposalId,uint256 nonce)");
   uint256 proposalCount = 1;
   mapping(uint256 => Proposal) public proposals;
   uint256 public memberCount;
@@ -57,7 +64,7 @@ contract DAO {
     if (proposal.executed) return ProposalState.EXECUTED;
     if (block.number <= proposal.startBlock) return ProposalState.PENDING;
     if (proposal.voteCount >= memberCount / QUORUM_DIVISOR)
-      return ProposalState.PASSED; // issue: can keep increasing ceiling to not pass
+      return ProposalState.PASSED;
     if (block.number <= proposal.endBlock) {
       return ProposalState.ACTIVE;
     } else {
@@ -66,11 +73,10 @@ contract DAO {
   }
 
   function buyMembership() public payable {
-    require(msg.value == MEMBERSHIP_FEE, "Fee is exactly 1 ETH");
+    require(msg.value == MEMBERSHIP_FEE, "Fee must be exactly 1 ETH");
     require(members[msg.sender] != true, "Cannot already be a member");
     members[msg.sender] = true;
     // have state variable for balance?
-    // emit event
   }
 
   function propose(
@@ -78,12 +84,12 @@ contract DAO {
     uint256[] memory _values,
     string[] memory _signatures,
     bytes[] memory _calldatas
-  ) public onlyMember {
+  ) public onlyMember returns (uint256) {
     require(
       _targets.length == _values.length &&
         _targets.length == _signatures.length &&
         _targets.length == _calldatas.length,
-      "function parameter length mismatch"
+      "function argument length mismatch"
     );
     require(_targets.length != 0, "must provide an action");
     require(_targets.length <= PROPOSAL_MAX_OPERATIONS, "too many actions");
@@ -101,54 +107,34 @@ contract DAO {
       executed: false
     });
     proposals[newProposal.id] = newProposal;
-    // emit event
-  }
-
-  function hash() internal pure returns (bytes32) {
-    // custom hash logic
+    return newProposal.id;
   }
 
   function castVoteBySig(
     uint256 _proposalId,
-    bytes32 _signature,
+    bytes memory _signature,
     address _signer,
     uint256 _nonce
   ) public isActive(_proposalId) {
-    bool verified; // hash the right things
-    if (verified) _recordVote(_proposalId, _signer);
+    bool verified = verifyVote(_signature, _signer, _proposalId, _nonce);
+    if (verified) _recordVote(_proposalId, _signer, _nonce);
   }
 
   function castVoteBySigBulk(
-    bytes32[] memory _signatures,
+    bytes[] memory _signatures,
     address[] memory _signers,
     uint256 _proposalId,
-    uint256[] memory nonces
+    uint256[] memory _nonces
   ) public isActive(_proposalId) {
     for (uint256 i = 0; i < _signatures.length; i++) {
-      bool verified; // hash the right things
-      if (verified) _recordVote(_proposalId, _signers[i]);
+      bool verified = verifyVote(
+        _signatures[i],
+        _signers[i],
+        _proposalId,
+        _nonces[i]
+      );
+      if (verified) _recordVote(_proposalId, _signers[i], _nonces[i]);
     }
-  }
-
-  function _verifyVote(
-    uint256 _proposalId,
-    bytes32 _signature,
-    address _signer,
-    uint256 _nonce
-  ) internal view returns (bool) {
-    if (state(_proposalId) != ProposalState.ACTIVE) return false; // may not need this
-    if (!members[_signer]) return false;
-    if (!usedNonces[_nonce]) return false;
-    bool verified; // hash the right things
-    return verified;
-  }
-
-  function _recordVote(uint256 _proposalId, address _member) internal {
-    Proposal storage proposal = proposals[_proposalId];
-    if (voteRecord[_proposalId][_member]) return; // already voted
-    voteRecord[_proposalId][_member] = true;
-    proposal.voteCount++;
-    // emit event
   }
 
   function execute(uint256 _proposalId) external onlyMember {
@@ -159,19 +145,76 @@ contract DAO {
     Proposal storage proposal = proposals[_proposalId];
     proposal.executed = true;
     for (uint256 i = 0; i < proposal.targets.length; i++) {
-      proposal.targets[i].call{ value: proposal.values[i] }(
+      (bool success, ) = proposal.targets[i].call{ value: proposal.values[i] }(
         abi.encodeWithSignature(proposal.signatures[i], proposal.calldatas[i])
       );
-      // revert whole thing if one call is wrong?
+      // if (success) do something
     }
-    // emit event
   }
 
-  function cancel(uint256 _proposalId) external {
+  function cancel(uint256 _proposalId) external isActive(_proposalId) {
     Proposal storage proposal = proposals[_proposalId];
     require(msg.sender == proposal.proposer, "Must be proposer to cancel");
     proposal.canceled = true;
-    // emit event
+  }
+
+  // ok to be public?
+  function verifyVote(
+    bytes memory _signature,
+    address _signer,
+    uint256 _proposalId,
+    uint256 _nonce
+  ) public view returns (bool) {
+    if (state(_proposalId) != ProposalState.ACTIVE) return false; // may not need this
+    if (!members[_signer]) return false;
+    if (!usedNonces[_nonce]) return false;
+    bytes32 domainSeparator = keccak256(
+      abi.encode(
+        DOMAIN_TYPEHASH,
+        keccak256(bytes(name)),
+        block.chainid,
+        address(this)
+      )
+    );
+    bytes32 structHash = keccak256(
+      abi.encode(VOTE_TYPEHASH, _proposalId, _nonce)
+    );
+    bytes32 digest = keccak256(
+      abi.encodePacked("\x19\x01", domainSeparator, structHash)
+    );
+    (bytes32 r, bytes32 s, uint8 v) = _splitSignature(_signature);
+    address signatory = ecrecover(digest, v, r, s);
+    bool verified = signatory == _signer;
+    return verified;
+  }
+
+  function _recordVote(
+    uint256 _proposalId,
+    address _member,
+    uint256 _nonce
+  ) internal {
+    Proposal storage proposal = proposals[_proposalId];
+    if (voteRecord[_proposalId][_member]) return; // already voted
+    voteRecord[_proposalId][_member] = true;
+    usedNonces[_nonce] = true;
+    proposal.voteCount++;
+  }
+
+  function _splitSignature(bytes memory sig)
+    internal
+    pure
+    returns (
+      bytes32 r,
+      bytes32 s,
+      uint8 v
+    )
+  {
+    require(sig.length == 65, "invalid signature length");
+    assembly {
+      r := mload(add(sig, 32))
+      s := mload(add(sig, 64))
+      v := byte(0, mload(add(sig, 96)))
+    }
   }
 
   // How to not repeat logic here?
@@ -181,13 +224,3 @@ contract DAO {
     members[msg.sender] = true;
   }
 }
-
-// issues with my voting:
-// Can buy mutliple addresses.
-// Two weeks may not be enough time.
-// Someone could keep creating accounts to delay, same as to vote
-
-// hashed way of getting proposalId
-// bytes32 proposalId = keccak256(
-//   abi.encode(_targets, _values, _signatures, _calldatas)
-// );
