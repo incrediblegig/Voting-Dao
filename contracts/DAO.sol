@@ -120,6 +120,7 @@ contract DAO {
     if (verified) _recordVote(_proposalId, _signer, _nonce);
   }
 
+  // batch events
   function castVoteBySigBulk(
     bytes[] memory _signatures,
     address[] memory _signers,
@@ -152,13 +153,6 @@ contract DAO {
     }
   }
 
-  function cancel(uint256 _proposalId) external isActive(_proposalId) {
-    Proposal storage proposal = proposals[_proposalId];
-    require(msg.sender == proposal.proposer, "Must be proposer to cancel");
-    proposal.canceled = true;
-  }
-
-  // ok to be public?
   function verifyVote(
     bytes memory _signature,
     address _signer,
@@ -215,12 +209,5 @@ contract DAO {
       s := mload(add(sig, 64))
       v := byte(0, mload(add(sig, 96)))
     }
-  }
-
-  // How to not repeat logic here?
-  receive() external payable {
-    require(msg.value == MEMBERSHIP_FEE, "Fee is exactly 1 ETH");
-    require(members[msg.sender] != true, "Cannot already be a member");
-    members[msg.sender] = true;
   }
 }

@@ -1,4 +1,5 @@
 const { expect } = require("chai");
+const { ethers } = require("ethers");
 const hre = require("hardhat");
 
 describe("DAO Contract", () => {
@@ -156,9 +157,15 @@ describe("DAO Contract", () => {
     );
     describe("Success:", async () => {
       it("Given inputs, hashes/decodes to output", async () => {
-        const res = await contract
-          .connect(member)
-          .verifyVote(voteSig, member.address, value.proposalId, value.nonce);
+        // const res = await contract
+        //   .connect(member)
+        //   .verifyVote(voteSig, member.address, value.proposalId, value.nonce);
+        const res = await ethers.utils.verifyTypedData(
+          domain,
+          types,
+          value,
+          voteSig
+        );
         console.log(res);
         console.log(voteSig);
       });
