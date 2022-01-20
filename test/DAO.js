@@ -1,5 +1,4 @@
 const { expect } = require("chai");
-const { ethers } = require("ethers");
 const hre = require("hardhat");
 
 describe("DAO Contract", () => {
@@ -38,14 +37,14 @@ describe("DAO Contract", () => {
     await contract.deployed();
     [proposer, member, nonMember, addr1, addr2, addr3] =
       await ethers.getSigners();
-    verifyingContract = contract.address;
+    domain.verifyingContract = contract.address;
     if (withMember) {
       await contract.connect(member).buyMembership({
         value: etherToWei(1),
       });
     }
     if (withProposal) {
-      const tx = await contract
+      await contract
         .connect(member)
         .propose(
           [addr1.address],
@@ -53,17 +52,13 @@ describe("DAO Contract", () => {
           [ethers.utils.formatBytes32String("contribute(uint256 _amount)")],
           [ethers.utils.randomBytes(32)]
         );
-      const id = ethers.BigNumber.from(tx.data);
-      console.log("id in deploy", id);
       value = {
         proposalId: 1,
         nonce: await member.getTransactionCount(),
       };
-      console.log("value in deploy", value);
     }
     if (withSignedVote) {
       voteSig = await member._signTypedData(domain, types, value);
-      console.log("voteSig", voteSig);
     }
   };
 
@@ -110,7 +105,6 @@ describe("DAO Contract", () => {
       it("Saves new proposal to storage", async () => {
         const proposalExistsBefore = await contract.proposals(1);
         expect(proposalExistsBefore).to.not.false;
-        console.log(ethers.BigNumber.from("0"));
         await contract
           .connect(member)
           .propose(
@@ -162,8 +156,11 @@ describe("DAO Contract", () => {
     );
     describe("Success:", async () => {
       it("Given inputs, hashes/decodes to output", async () => {
-        signature = await member._signTypedData(domain, types, value);
-        console.log(signature);
+        const res = await contract
+          .connect(member)
+          .verifyVote(voteSig, member.address, value.proposalId, value.nonce);
+        console.log(res);
+        console.log(voteSig);
       });
     });
     describe("Returns false if:", async () => {
