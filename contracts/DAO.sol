@@ -110,33 +110,33 @@ contract DAO {
     return newProposal.id;
   }
 
-  function castVoteBySig(
-    uint256 _proposalId,
-    bytes memory _signature,
-    address _signer,
-    uint256 _nonce
-  ) public isActive(_proposalId) {
-    bool verified = verifyVote(_signature, _signer, _proposalId, _nonce);
-    if (verified) _recordVote(_proposalId, _signer, _nonce);
-  }
+  // function castVoteBySig(
+  //   uint256 _proposalId,
+  //   bytes memory _signature,
+  //   address _signer,
+  //   uint256 _nonce
+  // ) public isActive(_proposalId) {
+  //   bool verified = verifyVote(_signature, _signer, _proposalId, _nonce);
+  //   if (verified) _recordVote(_proposalId, _signer, _nonce);
+  // }
 
   // batch events
-  function castVoteBySigBulk(
-    bytes[] memory _signatures,
-    address[] memory _signers,
-    uint256 _proposalId,
-    uint256[] memory _nonces
-  ) public isActive(_proposalId) {
-    for (uint256 i = 0; i < _signatures.length; i++) {
-      bool verified = verifyVote(
-        _signatures[i],
-        _signers[i],
-        _proposalId,
-        _nonces[i]
-      );
-      if (verified) _recordVote(_proposalId, _signers[i], _nonces[i]);
-    }
-  }
+  // function castVoteBySigBulk(
+  //   bytes[] memory _signatures,
+  //   address[] memory _signers,
+  //   uint256 _proposalId,
+  //   uint256[] memory _nonces
+  // ) public isActive(_proposalId) {
+  //   for (uint256 i = 0; i < _signatures.length; i++) {
+  //     bool verified = verifyVote(
+  //       _signatures[i],
+  //       _signers[i],
+  //       _proposalId,
+  //       _nonces[i]
+  //     );
+  //     if (verified) _recordVote(_proposalId, _signers[i], _nonces[i]);
+  //   }
+  // }
 
   function execute(uint256 _proposalId) external onlyMember {
     require(
@@ -162,22 +162,12 @@ contract DAO {
     if (state(_proposalId) != ProposalState.ACTIVE) return false; // may not need this
     if (!members[_signer]) return false;
     if (!usedNonces[_nonce]) return false;
-    bytes32 domainSeparator = keccak256(
-      abi.encode(
-        DOMAIN_TYPEHASH,
-        keccak256(bytes(name)),
-        block.chainid,
-        address(this)
-      )
-    );
-    bytes32 structHash = keccak256(
-      abi.encode(VOTE_TYPEHASH, _proposalId, _nonce)
-    );
-    bytes32 digest = keccak256(
-      abi.encodePacked("\x19\x01", domainSeparator, structHash)
+    bytes32 voteHash = keccak256(abi.encodePacked(_proposalId, _nonce));
+    bytes32 ethHash = keccak256(
+      abi.encodePacked("\x19Ethereum Signed Message:\n32", voteHash)
     );
     (bytes32 r, bytes32 s, uint8 v) = _splitSignature(_signature);
-    address signatory = ecrecover(digest, v, r, s);
+    address signatory = ecrecover(ethHash, v, r, s);
     bool verified = signatory == _signer;
     return verified;
   }

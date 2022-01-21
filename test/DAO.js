@@ -1,6 +1,5 @@
 const { expect } = require("chai");
-const { ethers } = require("ethers");
-const hre = require("hardhat");
+// const hre = require("hardhat");
 
 describe("DAO Contract", () => {
   let contractFactory;
@@ -11,18 +10,21 @@ describe("DAO Contract", () => {
   let addr1;
   let addr2;
   let addr3;
+  let messageHash;
+  let messageBinary;
+  let ethHash;
   let voteSig;
-  let domain = {
-    name: "Collector DAO",
-    chainId: hre.network.config.chainId,
-    verifyingContract: "", // set on deploy function
-  };
-  let types = {
-    Vote: [
-      { name: "proposalId", type: "uint256" },
-      { name: "nonce", type: "uint256" },
-    ],
-  };
+  // let domain = {
+  //   name: "Collector DAO",
+  //   chainId: hre.network.config.chainId,
+  //   verifyingContract: "", // set on deploy function
+  // };
+  // let types = {
+  //   Vote: [
+  //     { name: "proposalId", type: "uint256" },
+  //     { name: "nonce", type: "uint256" },
+  //   ],
+  // };
   let value = {
     proposalId: 0,
     nonce: 0,
@@ -38,7 +40,7 @@ describe("DAO Contract", () => {
     await contract.deployed();
     [proposer, member, nonMember, addr1, addr2, addr3] =
       await ethers.getSigners();
-    domain.verifyingContract = contract.address;
+    // domain.verifyingContract = contract.address;
     if (withMember) {
       await contract.connect(member).buyMembership({
         value: etherToWei(1),
@@ -59,7 +61,13 @@ describe("DAO Contract", () => {
       };
     }
     if (withSignedVote) {
-      voteSig = await member._signTypedData(domain, types, value);
+      messageHash = ethers.utils.solidityKeccak256(
+        ["uint", "uint"],
+        [value.proposalId, value.nonce]
+      );
+      messageBinary = ethers.utils.arrayify(messageHash);
+      // ethHash = ethers.utils.hashMessage(messageHash);
+      voteSig = await member.signMessage(messageBinary);
     }
   };
 
@@ -157,17 +165,11 @@ describe("DAO Contract", () => {
     );
     describe("Success:", async () => {
       it("Given inputs, hashes/decodes to output", async () => {
-        // const res = await contract
-        //   .connect(member)
-        //   .verifyVote(voteSig, member.address, value.proposalId, value.nonce);
-        const res = await ethers.utils.verifyTypedData(
-          domain,
-          types,
-          value,
-          voteSig
-        );
-        console.log(res);
-        console.log(voteSig);
+        expect(
+          await contract
+            .connect(member)
+            .verifyVote(voteSig, member.address, value.proposalId, value.nonce)
+        ).to.be.true;
       });
     });
     describe("Returns false if:", async () => {
