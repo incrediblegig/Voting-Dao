@@ -27,7 +27,6 @@ contract DAO {
     PENDING,
     ACTIVE,
     CANCELED,
-    DEFEATED,
     PASSED,
     QUEUED,
     EXECUTED,
@@ -63,7 +62,7 @@ contract DAO {
     if (proposal.canceled) return ProposalState.CANCELED;
     if (proposal.executed) return ProposalState.EXECUTED;
     if (block.number <= proposal.startBlock) return ProposalState.PENDING;
-    if (proposal.voteCount >= memberCount / QUORUM_DIVISOR)
+    if ((proposal.voteCount * 10)  >= (memberCount * 10) / QUORUM_DIVISOR) // multiplying by 10 to guard against solditiy rounding down
       return ProposalState.PASSED;
     if (block.number <= proposal.endBlock) {
       return ProposalState.ACTIVE;
@@ -76,6 +75,7 @@ contract DAO {
     require(msg.value == MEMBERSHIP_FEE, "Fee must be exactly 1 ETH");
     require(members[msg.sender] != true, "Cannot already be a member");
     members[msg.sender] = true;
+    memberCount++;
     // have state variable for balance?
   }
 
@@ -110,33 +110,33 @@ contract DAO {
     return newProposal.id;
   }
 
-  // function castVoteBySig(
-  //   uint256 _proposalId,
-  //   bytes memory _signature,
-  //   address _signer,
-  //   uint256 _nonce
-  // ) public isActive(_proposalId) {
-  //   bool verified = verifyVote(_signature, _signer, _proposalId, _nonce);
-  //   if (verified) _recordVote(_proposalId, _signer, _nonce);
-  // }
+  function castVoteBySig(
+    uint256 _proposalId,
+    bytes memory _signature,
+    address _signer,
+    uint256 _nonce
+  ) public isActive(_proposalId) {
+    bool verified = verifyVote(_signature, _signer, _proposalId, _nonce);
+    if (verified) _recordVote(_proposalId, _signer, _nonce);
+  }
 
   // batch events
-  // function castVoteBySigBulk(
-  //   bytes[] memory _signatures,
-  //   address[] memory _signers,
-  //   uint256 _proposalId,
-  //   uint256[] memory _nonces
-  // ) public isActive(_proposalId) {
-  //   for (uint256 i = 0; i < _signatures.length; i++) {
-  //     bool verified = verifyVote(
-  //       _signatures[i],
-  //       _signers[i],
-  //       _proposalId,
-  //       _nonces[i]
-  //     );
-  //     if (verified) _recordVote(_proposalId, _signers[i], _nonces[i]);
-  //   }
-  // }
+  function castVoteBySigBulk(
+    bytes[] memory _signatures,
+    address[] memory _signers,
+    uint256 _proposalId,
+    uint256[] memory _nonces
+  ) public isActive(_proposalId) {
+    for (uint256 i = 0; i < _signatures.length; i++) {
+      bool verified = verifyVote(
+        _signatures[i],
+        _signers[i],
+        _proposalId,
+        _nonces[i]
+      );
+      if (verified) _recordVote(_proposalId, _signers[i], _nonces[i]);
+    }
+  }
 
   function execute(uint256 _proposalId) external onlyMember {
     require(
@@ -159,9 +159,6 @@ contract DAO {
     uint256 _proposalId,
     uint256 _nonce
   ) public view returns (bool) {
-    if (state(_proposalId) != ProposalState.ACTIVE) return false; // may not need this
-    if (!members[_signer]) return false;
-    if (!usedNonces[_nonce]) return false;
     bytes32 voteHash = keccak256(abi.encodePacked(_proposalId, _nonce));
     bytes32 ethHash = keccak256(
       abi.encodePacked("\x19Ethereum Signed Message:\n32", voteHash)
@@ -174,12 +171,15 @@ contract DAO {
 
   function _recordVote(
     uint256 _proposalId,
-    address _member,
+    address _voter,
     uint256 _nonce
   ) internal {
     Proposal storage proposal = proposals[_proposalId];
-    if (voteRecord[_proposalId][_member]) return; // already voted
-    voteRecord[_proposalId][_member] = true;
+    if (state(_proposalId) != ProposalState.ACTIVE) return; // not active
+    if (!members[_voter]) return; // not a member
+    if (voteRecord[_proposalId][_voter]) return; // already voted
+    // nonce already used?
+    voteRecord[_proposalId][_voter] = true;
     usedNonces[_nonce] = true;
     proposal.voteCount++;
   }

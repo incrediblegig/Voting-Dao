@@ -1,4 +1,5 @@
 const { expect } = require("chai");
+const { network } = require("hardhat");
 // const hre = require("hardhat");
 
 describe("DAO Contract", () => {
@@ -6,6 +7,10 @@ describe("DAO Contract", () => {
   let contract;
   let proposer;
   let member;
+  let member2;
+  let member3;
+  let member4;
+  let member5;
   let nonMember;
   let addr1;
   let addr2;
@@ -14,35 +19,53 @@ describe("DAO Contract", () => {
   let messageBinary;
   let ethHash;
   let voteSig;
-  // let domain = {
-  //   name: "Collector DAO",
-  //   chainId: hre.network.config.chainId,
-  //   verifyingContract: "", // set on deploy function
-  // };
-  // let types = {
-  //   Vote: [
-  //     { name: "proposalId", type: "uint256" },
-  //     { name: "nonce", type: "uint256" },
-  //   ],
-  // };
+
   let value = {
     proposalId: 0,
     nonce: 0,
+    previousNonce: 0,
   };
 
   const etherToWei = (num) => {
     return ethers.utils.parseUnits(num.toString(), "ether");
   };
 
-  const deploy = async ({ withMember, withProposal, withSignedVote }) => {
+  const deploy = async ({
+    withMembers,
+    withProposal,
+    withSignedVote,
+    proposalActive,
+  }) => {
     contractFactory = await ethers.getContractFactory("DAO");
     contract = await contractFactory.deploy();
     await contract.deployed();
-    [proposer, member, nonMember, addr1, addr2, addr3] =
-      await ethers.getSigners();
+    [
+      proposer,
+      member,
+      member2,
+      member3,
+      member4,
+      member5,
+      nonMember,
+      addr1,
+      addr2,
+      addr3,
+    ] = await ethers.getSigners();
     // domain.verifyingContract = contract.address;
-    if (withMember) {
+    if (withMembers) {
       await contract.connect(member).buyMembership({
+        value: etherToWei(1),
+      });
+      await contract.connect(member2).buyMembership({
+        value: etherToWei(1),
+      });
+      await contract.connect(member3).buyMembership({
+        value: etherToWei(1),
+      });
+      await contract.connect(member4).buyMembership({
+        value: etherToWei(1),
+      });
+      await contract.connect(member5).buyMembership({
         value: etherToWei(1),
       });
     }
@@ -66,8 +89,17 @@ describe("DAO Contract", () => {
         [value.proposalId, value.nonce]
       );
       messageBinary = ethers.utils.arrayify(messageHash);
-      // ethHash = ethers.utils.hashMessage(messageHash);
       voteSig = await member.signMessage(messageBinary);
+    }
+    if (proposalActive) {
+      const beforeBlock = await ethers.provider.getBlock();
+      const beforeStatus = await contract.state(1);
+      await network.provider.send("evm_increaseTime", [3600]);
+      await network.provider.send("evm_mine");
+      await network.provider.send("evm_increaseTime", [3600]);
+      await network.provider.send("evm_mine");
+      const afterBlock = await ethers.provider.getBlock();
+      const afterStatus = await contract.state(1);
     }
   };
 
@@ -89,7 +121,7 @@ describe("DAO Contract", () => {
         expect(isMemberAfter).to.be.true;
       });
     });
-    before(async () => await deploy({ withMember: true }));
+    before(async () => await deploy({ withMembers: true }));
     describe("Fails if:", async () => {
       it("Tries to buy more than once per address", async () => {
         await expect(
@@ -109,7 +141,7 @@ describe("DAO Contract", () => {
   });
 
   describe("propose()", () => {
-    beforeEach(async () => await deploy({ withMember: true }));
+    beforeEach(async () => await deploy({ withMembers: true }));
     describe("Success:", async () => {
       it("Saves new proposal to storage", async () => {
         const proposalExistsBefore = await contract.proposals(1);
@@ -155,46 +187,81 @@ describe("DAO Contract", () => {
   });
 
   describe("_verifyVote()", () => {
-    beforeEach(
-      async () =>
-        await deploy({
-          withMember: true,
-          withProposal: true,
-          withSignedVote: true,
-        })
-    );
     describe("Success:", async () => {
-      it("Given inputs, hashes/decodes to output", async () => {
+      before(
+        async () =>
+          await deploy({
+            withMembers: true,
+            withProposal: true,
+            withSignedVote: true,
+            proposalActive: true,
+          })
+      );
+      it("Given same inputs, outputs match", async () => {
         expect(
           await contract
             .connect(member)
             .verifyVote(voteSig, member.address, value.proposalId, value.nonce)
         ).to.be.true;
       });
-    });
-    describe("Returns false if:", async () => {
-      it("Proposal not active", async () => {
-        // await expect().to.be.false;
-        // contract
-        //   .connect(addr1)
-        //   .propose(
-        //     [addr1.address],
-        //     [20],
-        //     [ethers.utils.formatBytes32String("contribute(uint256 _amount)")],
-        //     [ethers.utils.randomBytes(32)]
-        //   )
-      });
-      it("Nonce already used", async () => {
-        // await expect().to.be.false;
-        // contract
-        //   .connect(member)
-        //   .propose(
-        //     [addr1.address],
-        //     [20, 22],
-        //     [ethers.utils.formatBytes32String("contribute(uint256 _amount)")],
-        //     [ethers.utils.randomBytes(32)]
-        //   )
+      it("Given different inputs, outputs differ", async () => {
+        expect(
+          await contract
+            .connect(member)
+            .verifyVote(
+              voteSig,
+              member.address,
+              value.proposalId,
+              value.nonce + 1
+            )
+        ).to.be.false;
       });
     });
+
+    // describe("Returns false if:", async () => {
+    //   before(
+    //     async () =>
+    //       await deploy({
+    //         withMembers: true,
+    //         withProposal: true,
+    //         withSignedVote: true,
+    //       })
+    //   );
+    //   it("Proposal not active", async () => {
+    //     expect(
+    //       await contract
+    //         .connect(member)
+    //         .verifyVote(voteSig, member.address, value.proposalId, value.nonce)
+    //     ).to.be.false;
+    //   });
+    //   it("Proposal not active", async () => {
+    //     expect(
+    //       await contract
+    //         .connect(member)
+    //         .verifyVote(voteSig, member.address, value.proposalId, value.nonce)
+    //     ).to.be.false;
+    //   });
+    // before(
+    //   async () =>
+    //     await deploy({
+    //       withMembers: true,
+    //       withProposal: true,
+    //       withSignedVote: true,
+    //       proposalActive: true,
+    //     })
+    //);
+    // it("Nonce already used", async () => {
+    //   expect(
+    //     await contract
+    //       .connect(member)
+    //       .verifyVote(voteSig, member.address, value.proposalId, value.nonce)
+    //   ).to.be.true;
+    //   expect(
+    //     await contract
+    //       .connect(member)
+    //       .verifyVote(voteSig, member.address, value.proposalId, value.nonce)
+    //   ).to.be.false;
+    // });
+    // });
   });
 });
