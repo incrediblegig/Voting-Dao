@@ -4,18 +4,18 @@ pragma solidity ^0.8.0;
 import "hardhat/console.sol";
 
 contract DAO {
-  string public constant name = "Collector DAO";
+  // string public constant name = "Collector DAO";
   uint256 public constant PROPOSAL_MAX_OPERATIONS = 10; // cant have too many function calls
   uint256 public constant QUORUM_DIVISOR = 4; // 25%
   uint256 public constant VOTING_PERIOD_LENGTH = 80640; // two weeks
-  uint256 public constant VOTING_DELAY_LENGTH = 1;
+  uint256 public constant VOTING_DELAY_LENGTH = 2;
   uint256 public constant MEMBERSHIP_FEE = 1 ether;
-  bytes32 public constant DOMAIN_TYPEHASH =
-    keccak256(
-      "EIP712Domain(string name,uint256 chainId,address verifyingContract)"
-    );
-  bytes32 public constant VOTE_TYPEHASH =
-    keccak256("Vote(uint256 proposalId,uint256 nonce)");
+  // bytes32 public constant DOMAIN_TYPEHASH =
+  //   keccak256(
+  //     "EIP712Domain(string name,uint256 chainId,address verifyingContract)"
+  //   );
+  // bytes32 public constant VOTE_TYPEHASH =
+  //   keccak256("Vote(uint256 proposalId,uint256 nonce)");
   uint256 proposalCount = 1;
   mapping(uint256 => Proposal) public proposals;
   uint256 public memberCount;
@@ -111,13 +111,14 @@ contract DAO {
   }
 
   function castVoteBySig(
-    uint256 _proposalId,
-    bytes memory _signature,
+    bytes memory _signature, 
     address _signer,
+    uint256 _proposalId,
     uint256 _nonce
-  ) public isActive(_proposalId) {
+  ) public returns (bool) {
     bool verified = verifyVote(_signature, _signer, _proposalId, _nonce);
-    if (verified) _recordVote(_proposalId, _signer, _nonce);
+    if (verified) return _recordVote(_proposalId, _signer, _nonce);
+    return false;
   }
 
   // batch events
@@ -126,15 +127,14 @@ contract DAO {
     address[] memory _signers,
     uint256 _proposalId,
     uint256[] memory _nonces
-  ) public isActive(_proposalId) {
+  ) public {
     for (uint256 i = 0; i < _signatures.length; i++) {
-      bool verified = verifyVote(
+      castVoteBySig(
         _signatures[i],
         _signers[i],
         _proposalId,
         _nonces[i]
       );
-      if (verified) _recordVote(_proposalId, _signers[i], _nonces[i]);
     }
   }
 
@@ -173,15 +173,16 @@ contract DAO {
     uint256 _proposalId,
     address _voter,
     uint256 _nonce
-  ) internal {
+  ) internal returns (bool) {
     Proposal storage proposal = proposals[_proposalId];
-    if (state(_proposalId) != ProposalState.ACTIVE) return; // not active
-    if (!members[_voter]) return; // not a member
-    if (voteRecord[_proposalId][_voter]) return; // already voted
+    if (state(_proposalId) != ProposalState.ACTIVE) return false; // not active
+    if (!members[_voter]) return false; // not a member
+    if (voteRecord[_proposalId][_voter]) return false; // already voted
     // nonce already used?
     voteRecord[_proposalId][_voter] = true;
     usedNonces[_nonce] = true;
     proposal.voteCount++;
+    return true;
   }
 
   function _splitSignature(bytes memory sig)
