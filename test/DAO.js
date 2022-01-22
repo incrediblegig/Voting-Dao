@@ -13,7 +13,6 @@ describe("DAO Contract", () => {
   let nonMember;
   let proposalId;
   let proposalArgs;
-  let proposalArgs2;
   let signature;
   let signature2;
   let signature3;
@@ -43,16 +42,20 @@ describe("DAO Contract", () => {
     withProposal,
     withSignedVote,
     proposalInactive,
+    proposalPassed,
   }) => {
+    // Deploy contracts, activate signers
     contract = await (await ethers.getContractFactory("DAO")).deploy();
     await contract.deployed();
     marketplace = await (
       await ethers.getContractFactory("NftMarketplace")
     ).deploy();
     await marketplace.deployed();
+    [member, member2, member3, member4, member5, member6, nonMember] =
+      await ethers.getSigners();
 
+    // Set global variables from deployed contracts
     domain.verifyingContract = contract.address;
-
     proposalArgs = [
       [marketplace.address],
       [1],
@@ -65,8 +68,7 @@ describe("DAO Contract", () => {
       ethers.utils.keccak256(ethers.utils.toUtf8Bytes("Buying NFT")),
     ];
 
-    [member, member2, member3, member4, member5, member6, nonMember] =
-      await ethers.getSigners();
+    // Reusable contract state for use in tests
     if (withMembers) {
       await contract.connect(member).buyMembership({
         value: etherToWei(1),
@@ -100,6 +102,14 @@ describe("DAO Contract", () => {
       signature5 = await member5._signTypedData(domain, types, value);
       signature6 = await member6._signTypedData(domain, types, value);
       signatureNonMember = await nonMember._signTypedData(domain, types, value);
+    }
+    if (proposalPassed) {
+      await contract.castVoteBySigBulk(
+        [signature, signatureNonMember, signature3, signature4],
+        [member.address, nonMember.address, member2.address, member4.address],
+        proposalId,
+        [true, true, true, true]
+      );
     }
     if (proposalInactive) {
       for (i = 0; i < 80642; i++) {
@@ -187,7 +197,7 @@ describe("DAO Contract", () => {
         ];
         await expect(
           contract.connect(member).propose(...proposalArgs)
-        ).to.be.revertedWith("function argument length mismatch");
+        ).to.be.revertedWith("Function argument length mismatch");
       });
     });
   });
@@ -210,7 +220,7 @@ describe("DAO Contract", () => {
         ).to.be.true;
       });
     });
-    describe("Returns false:", async () => {
+    describe("Returns false if:", async () => {
       beforeEach(
         async () =>
           await deploy({
@@ -251,6 +261,7 @@ describe("DAO Contract", () => {
       });
     });
 
+    // skipped because long run time, turn on to do full test suite
     describe("Does not record vote if:", async () => {
       it.skip("Proposal not active", async () => {
         await deploy({
@@ -359,29 +370,37 @@ describe("DAO Contract", () => {
         ).to.changeEtherBalance(contract, -1);
       });
     });
-  });
-  describe("Fails if:", async () => {
-    beforeEach(
-      async () =>
+    describe("Fails if:", async () => {
+      it("Proposal already executed, not active", async () => {
         await deploy({
           withMembers: true,
           withProposal: true,
           withSignedVote: true,
-        })
-    );
-    it("Proposal already executed, not active", async () => {
-      await contract.castVoteBySigBulk(
-        [signature, signatureNonMember, signature3, signature4],
-        [member.address, nonMember.address, member2.address, member4.address],
-        proposalId,
-        [true, true, true, true]
-      );
-      await expect(
-        await contract.connect(member).execute(...proposalArgs)
-      ).to.changeEtherBalance(contract, -1);
-      await expect(
-        contract.connect(member).execute(...proposalArgs)
-      ).to.be.revertedWith("Proposal must be passed and not executed");
+          proposalPassed: true,
+        });
+        await expect(
+          await contract.connect(member).execute(...proposalArgs)
+        ).to.changeEtherBalance(contract, -1);
+        await expect(
+          contract.connect(member).execute(...proposalArgs)
+        ).to.be.revertedWith("Proposal must be passed and not executed");
+      });
+      // skipped because long run time, turn on to do full test suite
+      it.skip("Proposal not active", async () => {
+        await deploy({
+          withMembers: true,
+          withProposal: true,
+          withSignedVote: true,
+          proposalPassed: true,
+          proposalInactive: true,
+        });
+        await expect(
+          await contract.connect(member).execute(...proposalArgs)
+        ).to.changeEtherBalance(contract, -1);
+        await expect(
+          contract.connect(member).execute(...proposalArgs)
+        ).to.be.revertedWith("Proposal must be passed and not executed");
+      });
     });
   });
 });
