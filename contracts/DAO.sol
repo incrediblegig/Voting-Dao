@@ -3,32 +3,27 @@ pragma solidity ^0.8.0;
 
 import "hardhat/console.sol";
 
+// import "./NftMarketplace.sol";
+
 contract DAO {
-  // string public constant name = "Collector DAO";
+  string public constant name = "CollectorDAO";
   uint256 public constant PROPOSAL_MAX_OPERATIONS = 10; // cant have too many function calls
   uint256 public constant QUORUM_DIVISOR = 4; // 25%
   uint256 public constant VOTING_PERIOD_LENGTH = 80640; // two weeks
-  uint256 public constant VOTING_DELAY_LENGTH = 2;
   uint256 public constant MEMBERSHIP_FEE = 1 ether;
-  // bytes32 public constant DOMAIN_TYPEHASH =
-  //   keccak256(
-  //     "EIP712Domain(string name,uint256 chainId,address verifyingContract)"
-  //   );
-  // bytes32 public constant VOTE_TYPEHASH =
-  //   keccak256("Vote(uint256 proposalId,uint256 nonce)");
-  uint256 proposalCount = 1;
+  bytes32 public constant DOMAIN_TYPEHASH =
+    keccak256(
+      "EIP712Domain(string name,uint256 chainId,address verifyingContract)"
+    );
+  bytes32 public constant VOTE_TYPEHASH =
+    keccak256("Vote(uint256 proposalId,uint8 support)");
   mapping(uint256 => Proposal) public proposals;
-  uint256 public memberCount;
-  mapping(address => bool) public members;
-  mapping(uint256 => mapping(address => bool)) public voteRecord;
-  mapping(uint256 => bool) private usedNonces;
+  address[] public members;
+  mapping(address => bool) public isMember;
 
   enum ProposalState {
-    PENDING,
     ACTIVE,
-    CANCELED,
     PASSED,
-    QUEUED,
     EXECUTED,
     EXPIRED
   }
@@ -36,33 +31,28 @@ contract DAO {
   struct Proposal {
     uint256 id;
     address proposer;
-    address[] targets;
-    uint256[] values;
-    string[] signatures;
-    bytes[] calldatas;
     uint256 startBlock;
     uint256 endBlock;
-    uint256 voteCount;
-    bool canceled;
+    uint256 forVotes;
+    uint256 againstVotes;
     bool executed;
+    mapping(address => bool) hasVoted;
   }
 
   modifier onlyMember() {
-    require(members[msg.sender] == true, "Not a member");
-    _;
-  }
-
-  modifier isActive(uint256 proposalId) {
-    require(state(proposalId) == ProposalState.ACTIVE, "Proposal not active");
+    require(isMember[msg.sender] == true, "Not a member");
     _;
   }
 
   function state(uint256 _proposalId) public view returns (ProposalState) {
     Proposal storage proposal = proposals[_proposalId];
-    if (proposal.canceled) return ProposalState.CANCELED;
     if (proposal.executed) return ProposalState.EXECUTED;
-    if (block.number <= proposal.startBlock) return ProposalState.PENDING;
-    if ((proposal.voteCount * 10)  >= (memberCount * 10) / QUORUM_DIVISOR) // multiplying by 10 to guard against solditiy rounding down
+    if (
+      ((proposal.forVotes + proposal.againstVotes) * 10 >=
+        (members.length * 10) / QUORUM_DIVISOR) &&
+      proposal.forVotes > proposal.againstVotes
+    )
+      // multiplying by 10 to guard against solditiy rounding down
       return ProposalState.PASSED;
     if (block.number <= proposal.endBlock) {
       return ProposalState.ACTIVE;
@@ -73,83 +63,98 @@ contract DAO {
 
   function buyMembership() public payable {
     require(msg.value == MEMBERSHIP_FEE, "Fee must be exactly 1 ETH");
-    require(members[msg.sender] != true, "Cannot already be a member");
-    members[msg.sender] = true;
-    memberCount++;
-    // have state variable for balance?
+    require(isMember[msg.sender] != true, "Cannot already be a member");
+    isMember[msg.sender] = true;
+    members.push(msg.sender);
   }
 
   function propose(
     address[] memory _targets,
     uint256[] memory _values,
-    string[] memory _signatures,
-    bytes[] memory _calldatas
-  ) public onlyMember returns (uint256) {
+    bytes[] memory _calldatas,
+    bytes32 _descriptionHash
+  ) public onlyMember {
     require(
-      _targets.length == _values.length &&
-        _targets.length == _signatures.length &&
-        _targets.length == _calldatas.length,
+      _targets.length == _values.length && _targets.length == _calldatas.length,
       "function argument length mismatch"
     );
     require(_targets.length != 0, "must provide an action");
     require(_targets.length <= PROPOSAL_MAX_OPERATIONS, "too many actions");
-    Proposal memory newProposal = Proposal({
-      id: proposalCount++,
-      proposer: msg.sender,
-      targets: _targets,
-      values: _values,
-      signatures: _signatures,
-      calldatas: _calldatas,
-      startBlock: block.number + VOTING_DELAY_LENGTH,
-      endBlock: block.number + VOTING_PERIOD_LENGTH,
-      voteCount: 0,
-      canceled: false,
-      executed: false
-    });
-    proposals[newProposal.id] = newProposal;
-    return newProposal.id;
+    uint256 proposalId = hashProposal(
+      _targets,
+      _values,
+      _calldatas,
+      _descriptionHash
+    );
+    require(
+      (state(proposalId) != ProposalState.ACTIVE) &&
+        (state(proposalId) != ProposalState.ACTIVE),
+      "This  proposal already exists"
+    );
+    Proposal storage newProposal = proposals[proposalId];
+    newProposal.id = proposalId;
+    newProposal.proposer = msg.sender;
+    newProposal.endBlock = block.number + VOTING_PERIOD_LENGTH;
   }
 
   function castVoteBySig(
-    bytes memory _signature, 
+    bytes memory _signature,
     address _signer,
     uint256 _proposalId,
-    uint256 _nonce
+    uint8 _support
   ) public returns (bool) {
-    bool verified = verifyVote(_signature, _signer, _proposalId, _nonce);
-    if (verified) return _recordVote(_proposalId, _signer, _nonce);
+    bool verified = verifyVote(_signature, _signer, _proposalId, _support);
+    if (verified) return _recordVote(_proposalId, _signer, _support);
     return false;
   }
 
   // batch events
   function castVoteBySigBulk(
-    bytes[] memory _signatures,
-    address[] memory _signers,
+    bytes[] calldata _signatures,
+    address[] calldata _signers,
     uint256 _proposalId,
-    uint256[] memory _nonces
+    uint8[] calldata _supports
   ) public {
     for (uint256 i = 0; i < _signatures.length; i++) {
-      castVoteBySig(
-        _signatures[i],
-        _signers[i],
-        _proposalId,
-        _nonces[i]
-      );
+      castVoteBySig(_signatures[i], _signers[i], _proposalId, _supports[i]);
     }
   }
 
-  function execute(uint256 _proposalId) external onlyMember {
-    require(
-      state(_proposalId) == ProposalState.PASSED,
-      "Proposal must be passed and not already executed"
+  function execute(
+    address[] memory _targets,
+    uint256[] memory _values,
+    bytes[] memory _calldatas,
+    bytes32 _descriptionHash
+  ) external onlyMember {
+    uint256 proposalId = hashProposal(
+      _targets,
+      _values,
+      _calldatas,
+      _descriptionHash
     );
-    Proposal storage proposal = proposals[_proposalId];
+    require(
+      state(proposalId) == ProposalState.PASSED,
+      "Proposal must be passed and not executed"
+    );
+    Proposal storage proposal = proposals[proposalId];
     proposal.executed = true;
-    for (uint256 i = 0; i < proposal.targets.length; i++) {
-      (bool success, ) = proposal.targets[i].call{ value: proposal.values[i] }(
-        abi.encodeWithSignature(proposal.signatures[i], proposal.calldatas[i])
-      );
-      // if (success) do something
+    for (uint256 i = 0; i < _targets.length; i++) {
+      string memory errorMsg = "Call reverted without Message";
+      (bool success, bytes memory response) = _targets[i].call{
+        value: _values[i]
+      }(_calldatas[i]);
+      if (success) {
+        // We good
+      } else if (response.length > 0) {
+        // Taken from OZ's Address.sol contract
+        assembly {
+          let response_size := mload(response)
+          revert(add(32, response), response_size)
+        }
+      } else {
+        // No revert reason given
+        revert(errorMsg);
+      }
     }
   }
 
@@ -157,14 +162,24 @@ contract DAO {
     bytes memory _signature,
     address _signer,
     uint256 _proposalId,
-    uint256 _nonce
+    uint8 _support
   ) public view returns (bool) {
-    bytes32 voteHash = keccak256(abi.encodePacked(_proposalId, _nonce));
-    bytes32 ethHash = keccak256(
-      abi.encodePacked("\x19Ethereum Signed Message:\n32", voteHash)
+    bytes32 domainSeparator = keccak256(
+      abi.encode(
+        DOMAIN_TYPEHASH,
+        keccak256(bytes(name)),
+        _getChainId(),
+        address(this)
+      )
+    );
+    bytes32 structHash = keccak256(
+      abi.encode(VOTE_TYPEHASH, _proposalId, _support)
+    );
+    bytes32 digest = keccak256(
+      abi.encodePacked("\x19\x01", domainSeparator, structHash)
     );
     (bytes32 r, bytes32 s, uint8 v) = _splitSignature(_signature);
-    address signatory = ecrecover(ethHash, v, r, s);
+    address signatory = ecrecover(digest, v, r, s);
     bool verified = signatory == _signer;
     return verified;
   }
@@ -172,17 +187,39 @@ contract DAO {
   function _recordVote(
     uint256 _proposalId,
     address _voter,
-    uint256 _nonce
+    uint8 _support
   ) internal returns (bool) {
     Proposal storage proposal = proposals[_proposalId];
     if (state(_proposalId) != ProposalState.ACTIVE) return false; // not active
-    if (!members[_voter]) return false; // not a member
-    if (voteRecord[_proposalId][_voter]) return false; // already voted
-    // nonce already used?
-    voteRecord[_proposalId][_voter] = true;
-    usedNonces[_nonce] = true;
-    proposal.voteCount++;
+    if (!isMember[_voter]) return false; // not a member
+    if (proposal.hasVoted[_voter]) return false; // already voted
+    proposal.hasVoted[_voter] = true;
+    if (_support == 1) {
+      proposal.forVotes++;
+    } else {
+      proposal.againstVotes++;
+    }
     return true;
+  }
+
+  function hashProposal(
+    address[] memory _targets,
+    uint256[] memory _values,
+    bytes[] memory _calldatas,
+    bytes32 _descriptionHash
+  ) public pure virtual returns (uint256) {
+    return
+      uint256(
+        keccak256(abi.encode(_targets, _values, _calldatas, _descriptionHash))
+      );
+  }
+
+  function _getChainId() internal view returns (uint256) {
+    uint256 chainId;
+    assembly {
+      chainId := chainid()
+    }
+    return chainId;
   }
 
   function _splitSignature(bytes memory sig)
