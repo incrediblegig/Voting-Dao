@@ -39,8 +39,10 @@
 
 - Use a similar pattern to Compound Comp contract
 - Keep record of delegates and if someone has already delegated. Use two mappings: one to keep track of delegation (address => address), and another to keep track of if an address has already been delegated (address => bool)
-- Include a `delegateBySig()` function that verifies a delegation signature via EIP712 and calls an internal function (`_delegate`) to delegate someone's vote and update contract mappings.
-- In my `delegateBySig()` function, add a require check to ensure an address hasn't already been delegated
+- Include a mapping to count how many votes someone has power over (address => uint256)
+- Include a `delegateBySig()` function that verifies a delegation signature via EIP712 and calls an internal function (`_delegate`) to delegate someone's vote and update contract mappings. Add a require check to ensure an address hasn't already been delegated
+- Update hasVoted mapping on Proposal struct to be a count of how many votes an address has record (address => uint256)
+- Add a require check/throw logic in vote recording function to ensure someone isn't voting more times than they're allowed
 
 ### DESIGN EXERCISE 2:
 
