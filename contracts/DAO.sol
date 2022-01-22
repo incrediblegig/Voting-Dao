@@ -14,7 +14,7 @@ contract DAO {
       "EIP712Domain(string name,uint256 chainId,address verifyingContract)"
     );
   bytes32 public constant VOTE_TYPEHASH =
-    keccak256("Vote(uint256 proposalId,uint8 support)");
+    keccak256("Vote(uint256 proposalId,bool support)");
   mapping(uint256 => Proposal) public proposals;
   address[] public members;
   mapping(address => bool) public isMember;
@@ -99,19 +99,18 @@ contract DAO {
     bytes memory _signature,
     address _signer,
     uint256 _proposalId,
-    uint8 _support
+    bool _support
   ) public returns (bool) {
     bool verified = verifyVote(_signature, _signer, _proposalId, _support);
     if (verified) return _recordVote(_proposalId, _signer, _support);
     return false;
   }
 
-  // batch events
   function castVoteBySigBulk(
     bytes[] calldata _signatures,
     address[] calldata _signers,
     uint256 _proposalId,
-    uint8[] calldata _supports
+    bool[] calldata _supports
   ) public {
     for (uint256 i = 0; i < _signatures.length; i++) {
       castVoteBySig(_signatures[i], _signers[i], _proposalId, _supports[i]);
@@ -132,7 +131,7 @@ contract DAO {
         _descriptionHash
       );
 
-      require( // remove this require, add to error string
+      require(
         (state(proposalId) == ProposalState.PASSED) &&
           (state(proposalId) != ProposalState.EXECUTED),
         "Proposal must be passed and not executed"
@@ -143,9 +142,7 @@ contract DAO {
       (bool success, bytes memory response) = _targets[i].call{
         value: _values[i]
       }(_calldatas[i]);
-      if (success) {
-        // We good
-      } else if (response.length > 0) {
+      if (success) {} else if (response.length > 0) {
         assembly {
           let response_size := mload(response)
           revert(add(32, response), response_size)
@@ -160,7 +157,7 @@ contract DAO {
     bytes memory _signature,
     address _signer,
     uint256 _proposalId,
-    uint8 _support
+    bool _support
   ) public view returns (bool) {
     bytes32 domainSeparator = keccak256(
       abi.encode(
@@ -182,24 +179,6 @@ contract DAO {
     return verified;
   }
 
-  function _recordVote(
-    uint256 _proposalId,
-    address _voter,
-    uint8 _support
-  ) internal returns (bool) {
-    Proposal storage proposal = proposals[_proposalId];
-    if (state(_proposalId) != ProposalState.ACTIVE) return false; // not active
-    if (!isMember[_voter]) return false; // not a member
-    if (proposal.hasVoted[_voter]) return false; // already voted
-    proposal.hasVoted[_voter] = true;
-    if (_support == 1) {
-      proposal.forVotes++;
-    } else {
-      proposal.againstVotes++;
-    }
-    return true;
-  }
-
   function hashProposal(
     address[] memory _targets,
     uint256[] memory _values,
@@ -210,6 +189,24 @@ contract DAO {
       uint256(
         keccak256(abi.encode(_targets, _values, _calldatas, _descriptionHash))
       );
+  }
+
+  function _recordVote(
+    uint256 _proposalId,
+    address _voter,
+    bool _support
+  ) internal returns (bool) {
+    Proposal storage proposal = proposals[_proposalId];
+    if (state(_proposalId) != ProposalState.ACTIVE) return false; // not active
+    if (!isMember[_voter]) return false; // not a member
+    if (proposal.hasVoted[_voter]) return false; // already voted
+    proposal.hasVoted[_voter] = true;
+    if (_support) {
+      proposal.forVotes++;
+    } else {
+      proposal.againstVotes++;
+    }
+    return true;
   }
 
   function _getChainId() internal view returns (uint256) {

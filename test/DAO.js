@@ -11,7 +11,6 @@ describe("DAO Contract", () => {
   let member5;
   let member6;
   let nonMember;
-  let arbitraryAddr = "0xd115bffabbdd893a6f7cea402e7338643ced44a6";
   let proposalId;
   let proposalArgs;
   let proposalArgs2;
@@ -30,10 +29,10 @@ describe("DAO Contract", () => {
   let types = {
     Vote: [
       { name: "proposalId", type: "uint256" },
-      { name: "support", type: "uint8" },
+      { name: "support", type: "bool" },
     ],
   };
-  let value = { proposalId: 0, support: 1 };
+  let value = { proposalId: 0, support: true };
 
   const etherToWei = (num) => {
     return ethers.utils.parseUnits(num.toString(), "ether");
@@ -65,17 +64,7 @@ describe("DAO Contract", () => {
       ],
       ethers.utils.keccak256(ethers.utils.toUtf8Bytes("Buying NFT")),
     ];
-    proposalArgs2 = [
-      [marketplace.address],
-      [0],
-      [
-        marketplace.interface.encodeFunctionData("getPrice", [
-          "0xd115bffabbdd893a6f7cea402e7338643ced44a6",
-          12345,
-        ]),
-      ],
-      ethers.utils.keccak256(ethers.utils.toUtf8Bytes("Checking NFT price")),
-    ];
+
     [member, member2, member3, member4, member5, member6, nonMember] =
       await ethers.getSigners();
     if (withMembers) {
@@ -234,7 +223,7 @@ describe("DAO Contract", () => {
         expect(
           await contract
             .connect(member)
-            .verifyVote(signature, nonMember.address, proposalId, 1)
+            .verifyVote(signature, nonMember.address, proposalId, true)
         ).to.be.false;
       });
     });
@@ -255,7 +244,7 @@ describe("DAO Contract", () => {
         );
         await contract
           .connect(member)
-          .castVoteBySig(signature, member.address, proposalId, 1);
+          .castVoteBySig(signature, member.address, proposalId, true);
         expect((await contract.proposals(proposalId)).forVotes).to.deep.equal(
           1
         );
@@ -276,7 +265,7 @@ describe("DAO Contract", () => {
 
         await contract
           .connect(member)
-          .castVoteBySig(signature, member.address, proposalId, 1);
+          .castVoteBySig(signature, member.address, proposalId, true);
         expect((await contract.proposals(proposalId)).forVotes).to.deep.equal(
           0
         );
@@ -295,7 +284,12 @@ describe("DAO Contract", () => {
         );
         await contract
           .connect(nonMember)
-          .castVoteBySig(signatureNonMember, nonMember.address, proposalId, 1);
+          .castVoteBySig(
+            signatureNonMember,
+            nonMember.address,
+            proposalId,
+            true
+          );
         expect((await contract.proposals(proposalId)).forVotes).to.deep.equal(
           0
         );
@@ -306,10 +300,10 @@ describe("DAO Contract", () => {
         );
         await contract
           .connect(member)
-          .castVoteBySig(signature, member.address, proposalId, 1);
+          .castVoteBySig(signature, member.address, proposalId, true);
         await contract
           .connect(member)
-          .castVoteBySig(signature, member.address, proposalId, 1);
+          .castVoteBySig(signature, member.address, proposalId, true);
         expect((await contract.proposals(proposalId)).forVotes).to.deep.equal(
           1
         );
@@ -335,10 +329,10 @@ describe("DAO Contract", () => {
           [signature, signatureNonMember, signature3, signature4],
           [member.address, nonMember.address, member2.address, member4.address],
           proposalId,
-          [1, 1, 1, 1]
+          [true, true, true, false]
         );
         expect((await contract.proposals(proposalId)).forVotes).to.deep.equal(
-          2
+          1
         );
       });
     });
@@ -358,12 +352,36 @@ describe("DAO Contract", () => {
           [signature, signatureNonMember, signature3, signature4],
           [member.address, nonMember.address, member2.address, member4.address],
           proposalId,
-          [1, 1, 1, 1]
+          [true, true, true, true]
         );
         await expect(
           await contract.connect(member).execute(...proposalArgs)
         ).to.changeEtherBalance(contract, -1);
       });
+    });
+  });
+  describe("Fails if:", async () => {
+    beforeEach(
+      async () =>
+        await deploy({
+          withMembers: true,
+          withProposal: true,
+          withSignedVote: true,
+        })
+    );
+    it("Proposal already executed, not active", async () => {
+      await contract.castVoteBySigBulk(
+        [signature, signatureNonMember, signature3, signature4],
+        [member.address, nonMember.address, member2.address, member4.address],
+        proposalId,
+        [true, true, true, true]
+      );
+      await expect(
+        await contract.connect(member).execute(...proposalArgs)
+      ).to.changeEtherBalance(contract, -1);
+      await expect(
+        contract.connect(member).execute(...proposalArgs)
+      ).to.be.revertedWith("Proposal must be passed and not executed");
     });
   });
 });
