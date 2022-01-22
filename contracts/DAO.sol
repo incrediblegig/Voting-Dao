@@ -36,6 +36,7 @@ contract DAO {
     _;
   }
 
+  /// @dev get a proposal's state by id
   function state(uint256 _proposalId) public view returns (ProposalState) {
     Proposal storage proposal = proposals[_proposalId];
     if (proposal.executed) return ProposalState.EXECUTED;
@@ -45,6 +46,7 @@ contract DAO {
     return ProposalState.EXPIRED;
   }
 
+  /// @dev become a member for exactly 1 ETH
   function buyMembership() public payable {
     require(msg.value == MEMBERSHIP_FEE, "Fee must be exactly 1 ETH");
     require(isMember[msg.sender] != true, "Cannot already be a member");
@@ -52,6 +54,7 @@ contract DAO {
     members.push(msg.sender);
   }
 
+  /// @dev creates new proposal identified by id (hash of inputs), saves on chain
   function propose(
     address[] memory _targets,
     uint256[] memory _values,
@@ -70,6 +73,7 @@ contract DAO {
     emit ProposalSubmitted(proposalId, msg.sender);
   }
 
+  /// @dev submits single vote for validation and then recording on chain
   function castVoteBySig(
     bytes memory _signature,
     address _signer,
@@ -81,6 +85,7 @@ contract DAO {
     return false;
   }
 
+  /// @dev submits multiple votes for validation and then recording on chain
   function castVoteBySigBulk(
     bytes[] calldata _signatures,
     address[] calldata _signers,
@@ -92,6 +97,7 @@ contract DAO {
     }
   }
 
+  /// @dev executes a passed proposal. Any member can call.
   function execute(
     address[] memory _targets,
     uint256[] memory _values,
@@ -106,7 +112,7 @@ contract DAO {
       proposal.executed = true;
       (bool success, bytes memory response) = _targets[i].call{value: _values[i]}(_calldatas[i]);
       if (success) {
-        // do nothing
+        emit ProposalExecuted(proposalId);
       } else if (response.length > 0) {
         assembly {
           let response_size := mload(response)
@@ -118,6 +124,7 @@ contract DAO {
     }
   }
 
+  /// @dev verifies vote signature
   function verifyVote(
     bytes memory _signature,
     address _signer,
@@ -133,6 +140,7 @@ contract DAO {
     return verified;
   }
 
+  /// @dev hashes proposal arguments to derive id
   function hashProposal(
     address[] memory _targets,
     uint256[] memory _values,
@@ -142,6 +150,7 @@ contract DAO {
     return uint256(keccak256(abi.encode(_targets, _values, _calldatas, _descriptionHash)));
   }
 
+  /// @dev records vote in storage. Assumes already valid. Internal.
   function _recordVote(uint256 _proposalId, address _voter, bool _support) internal returns (bool) {
     Proposal storage proposal = proposals[_proposalId];
     if (state(_proposalId) != ProposalState.ACTIVE) return false; // not active
@@ -157,6 +166,7 @@ contract DAO {
     return true;
   }
 
+  /// @dev get chainId for use in EIP712
   function _getChainId() internal view returns (uint256) {
     uint256 chainId;
     assembly {
@@ -165,14 +175,15 @@ contract DAO {
     return chainId;
   }
 
+  /// @dev derives v, r, and s from a given signature
   function _splitSignature(bytes memory sig) internal pure returns (bytes32 r, bytes32 s, uint8 v) {
-    require(sig.length == 65, "Invalid signature length");
     assembly {
       r := mload(add(sig, 32))
       s := mload(add(sig, 64))
       v := byte(0, mload(add(sig, 96)))
     }
   }
-  event VoteRecorded(uint indexed proposalId, address indexed voter, bool support);
-  event ProposalSubmitted(uint indexed proposalId, address indexed proposer);
+  event VoteRecorded(uint indexed _proposalId, address indexed _voter, bool _support);
+  event ProposalSubmitted(uint indexed _proposalId, address indexed _proposer);
+  event ProposalExecuted(uint indexed _proposalId);
 }
