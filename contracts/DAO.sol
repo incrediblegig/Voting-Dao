@@ -86,8 +86,8 @@ contract DAO {
     );
     require(
       (state(proposalId) != ProposalState.ACTIVE) &&
-        (state(proposalId) != ProposalState.ACTIVE),
-      "This  proposal already exists"
+        (state(proposalId) != ProposalState.EXECUTED),
+      "Proposal already exists"
     );
     Proposal storage newProposal = proposals[proposalId];
     newProposal.id = proposalId;
