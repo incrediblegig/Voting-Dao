@@ -14,12 +14,13 @@ describe("DAO Contract", () => {
   let arbitraryAddr = "0xd115bffabbdd893a6f7cea402e7338643ced44a6";
   let proposalId;
   let proposalArgs;
+  let proposalArgs2;
   let signature;
-  let signatureTwo;
-  let signatureThree;
-  let signatureFour;
-  let signatureFive;
-  let signatureSix;
+  let signature2;
+  let signature3;
+  let signature4;
+  let signature5;
+  let signature6;
   let signatureNonMember;
   let domain = {
     name: "CollectorDAO",
@@ -52,7 +53,19 @@ describe("DAO Contract", () => {
     await marketplace.deployed();
 
     domain.verifyingContract = contract.address;
+
     proposalArgs = [
+      [marketplace.address],
+      [1],
+      [
+        marketplace.interface.encodeFunctionData("buy", [
+          "0xd115bffabbdd893a6f7cea402e7338643ced44a6",
+          12345,
+        ]),
+      ],
+      ethers.utils.keccak256(ethers.utils.toUtf8Bytes("Buying NFT")),
+    ];
+    proposalArgs2 = [
       [marketplace.address],
       [0],
       [
@@ -92,11 +105,11 @@ describe("DAO Contract", () => {
     }
     if (withSignedVote) {
       signature = await member._signTypedData(domain, types, value);
-      signatureTwo = await member2._signTypedData(domain, types, value);
-      signatureThree = await member3._signTypedData(domain, types, value);
-      signatureFour = await member4._signTypedData(domain, types, value);
-      signatureFive = await member5._signTypedData(domain, types, value);
-      signatureSix = await member6._signTypedData(domain, types, value);
+      signature2 = await member2._signTypedData(domain, types, value);
+      signature3 = await member3._signTypedData(domain, types, value);
+      signature4 = await member4._signTypedData(domain, types, value);
+      signature5 = await member5._signTypedData(domain, types, value);
+      signature6 = await member6._signTypedData(domain, types, value);
       signatureNonMember = await nonMember._signTypedData(domain, types, value);
     }
     if (proposalInactive) {
@@ -303,7 +316,7 @@ describe("DAO Contract", () => {
       });
     });
   });
-  describe("castVoteBySig()", () => {
+  describe("castVoteBySigBulk()", () => {
     describe("Success:", async () => {
       beforeEach(
         async () =>
@@ -317,22 +330,39 @@ describe("DAO Contract", () => {
         expect((await contract.proposals(proposalId)).forVotes).to.deep.equal(
           0
         );
-        await contract
-          .connect(member)
-          .castVoteBySig(signature, member.address, proposalId, 1); // correct
-        await contract
-          .connect(member2)
-          .castVoteBySig(signatureTwo, nonMember.address, proposalId, 1); // incorrect
-        await contract
-          .connect(nonMember)
-          .castVoteBySig(signatureThree, nonMember.address, proposalId, 1); // not member
-        await contract
-          .connect(member3)
-          .castVoteBySig(signatureThree, member3.address, proposalId, 1); //correct
-
+        // first = correct, second = not member, third = wrong signature, fourth = correct
+        await contract.castVoteBySigBulk(
+          [signature, signatureNonMember, signature3, signature4],
+          [member.address, nonMember.address, member2.address, member4.address],
+          proposalId,
+          [1, 1, 1, 1]
+        );
         expect((await contract.proposals(proposalId)).forVotes).to.deep.equal(
           2
         );
+      });
+    });
+  });
+  describe("execute()", () => {
+    describe("Success:", async () => {
+      beforeEach(
+        async () =>
+          await deploy({
+            withMembers: true,
+            withProposal: true,
+            withSignedVote: true,
+          })
+      );
+      it("Makes arbitrary external calls, can buy NFT", async () => {
+        await contract.castVoteBySigBulk(
+          [signature, signatureNonMember, signature3, signature4],
+          [member.address, nonMember.address, member2.address, member4.address],
+          proposalId,
+          [1, 1, 1, 1]
+        );
+        await expect(
+          await contract.connect(member).execute(...proposalArgs)
+        ).to.changeEtherBalance(contract, -1);
       });
     });
   });

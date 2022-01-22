@@ -3,8 +3,6 @@ pragma solidity ^0.8.0;
 
 import "hardhat/console.sol";
 
-// import "./NftMarketplace.sol";
-
 contract DAO {
   string public constant name = "CollectorDAO";
   uint256 public constant PROPOSAL_MAX_OPERATIONS = 10; // cant have too many function calls
@@ -126,33 +124,33 @@ contract DAO {
     bytes[] memory _calldatas,
     bytes32 _descriptionHash
   ) external onlyMember {
-    uint256 proposalId = hashProposal(
-      _targets,
-      _values,
-      _calldatas,
-      _descriptionHash
-    );
-    require(
-      state(proposalId) == ProposalState.PASSED,
-      "Proposal must be passed and not executed"
-    );
-    Proposal storage proposal = proposals[proposalId];
-    proposal.executed = true;
     for (uint256 i = 0; i < _targets.length; i++) {
-      string memory errorMsg = "Call reverted without Message";
+      uint256 proposalId = hashProposal(
+        _targets,
+        _values,
+        _calldatas,
+        _descriptionHash
+      );
+
+      require( // remove this require, add to error string
+        (state(proposalId) == ProposalState.PASSED) &&
+          (state(proposalId) != ProposalState.EXECUTED),
+        "Proposal must be passed and not executed"
+      );
+      string memory errorMsg = "Call reverted without message";
+      Proposal storage proposal = proposals[proposalId];
+      proposal.executed = true;
       (bool success, bytes memory response) = _targets[i].call{
         value: _values[i]
       }(_calldatas[i]);
       if (success) {
         // We good
       } else if (response.length > 0) {
-        // Taken from OZ's Address.sol contract
         assembly {
           let response_size := mload(response)
           revert(add(32, response), response_size)
         }
       } else {
-        // No revert reason given
         revert(errorMsg);
       }
     }
