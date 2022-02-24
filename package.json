@@ -8,5 +8,8 @@
     "ethers": "^5.5.3",
     "hardhat": "^2.8.3",
     "prettier": "^2.5.1"
+  },
+  "dependencies": {
+    "dotenv": "^16.0.0"
   }
 }

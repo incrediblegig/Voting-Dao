@@ -1,6 +1,8 @@
 //SPDX-License-Identifier: Unlicense
 pragma solidity ^0.8.0;
 
+// For testing purposes, dummy contract to call on successful proposal
+
 contract NftMarketplace {
   function getPrice(address nftContract, uint256 nftId)
     public

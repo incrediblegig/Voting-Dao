@@ -1,54 +1,52 @@
-# Week 3 Project: DAO
+# Collector DAO ⚖️
 
-#### _Brian Watroba, Block 3_
+DAO to propose, vote on, and purchase NFTs for community ownership. Deployed to Ethereum testnet (Rinkeby).
 
-### NOTES ON PROJECT CODE:
+## Features
 
-- **Submitting late:** thanks to the instruction team for letting me submit late. I was pretty absent this week--my brother was in the hopsital for a serious COVID case, I couldn't do work most of the week. Thankfully he's now been released and is stable. Appreciate the support and flexibility from the community, means a lot.
-- **Yes, I saw the solution:** because I submitted late I did see the solution. I used it to learn and included a few design patterns, but the majority of this code is mine from before.
-- **`state()` function:** it may feel superfluous to have this, but I felt it's necessary for members to be able to easily see the state of a proposal without having to lookup a Proposal struct and run logic on it. Also makes it cleaner to read in my opinion.
-- **`verifyVote():` signature instead of v, r, and s:** This pattern felt more intuitive to me. If signing votes is happening off-chain, it's simplest to provide that siganture as an input rather than decode it before calling the contract.
-- **`_recordVote():` returning bools vs. strings** the string pattern (from solution) does seem cleaner, but I'm honoring my original decision to use bools to keep this as original to my thinking as possible (it's what I did pre solution).
-- **Implemented EIP712, but without inheritance**: this was fun, and I learned a lot doing it. Getting hashes to match up in ethers.js and solidity is quite the trip!
-- **Votes can only be submitted by signature:** for consistency I didn't include a voting option that is validated by msg.sender.
-- **Vote events only emitted once recorded:** vote record is a more significant event than vote casting (which could be an invalid signature/vote). I didn't wany any external confusion on what a recorded vs. casted vote was. It would have been more gas efficient to emit one event on bulk counting, but I wanted to keep things consistent and only require users to listen to a single event to get a proposal's state.
+- **Proposal submission:** DAO members can submit proposals. proposals have four states - ACTIVE, PASSED, EXECUTED, and EXPIRED. Proposals must include function calls to execute once passed (max of 10).
+- **Two week voting period:** proposals can be voted on for ~two weeks (measured by block number), and are EXPIRED after this time.
+- **Members can vote either "for" or "against":** Votes are accepted via signature (EIP712), either individually or in bulk.
+- **Passing proposals:** occurs when 1) 25% of current members have voted AND 2) "for" votes outnumber "against" votes.
+- **Executing proposals:** once a proposal is passed, any member can call execute(). The proposal's functions are then called.
 
-### VOTING SYSTEM:
+## Contract adddresses (Rinkeby test)
 
-**How it works:**
+- _DAO.sol:_ `0x4D5Cf0c3FA910B99A6fF740e0F2aec2590882772`
 
-- DAO members can submit proposals
-- Proposals can have four states: `ACTIVE`, `PASSED`, `EXECUTED`, and `EXPIRED`. Proposals must include function calls to execute once `passed` (max of 10).
-- Valid proposals are `ACTIVE` immediately. They can be voted on for ~two weeks (measured by block number), and are `EXPIRED` after this time.
-- Members can vote either "for" or "against" on an `ACTIVE` proposal. Votes are accepted via signature, either individually or in bulk.
-- Proposal is `PASSED` when 1) 25% of current members have voted AND 2) "for" votes outnumber "against" votes.
-- Once a proposal is passed, any member can call `execute()`. The proposal's functions are then called.
+## Local setup
 
-**Tradeoffs and rationale:**
+1. Clone repository: `git clone https://github.com/brianwatroba/collector-dao.git`
+2. Install base project dependencies: cd into root, run `npm install`
+3. Add local .env file to project root. Include below env variables (replace keys with your own):
 
-- **No "abstain" vote option:** a quorum should represent a minimum acceptable participation level. I believe "for" or "against" opinions are strongest and should drive whether a proposal is passed. A proposal that reaches quorum with almost all "abstain" votes but only a "few" for votes doesn't have high enough conviction to pass.
-- **One "member", one vote:** theoretically someone could create a lot of new addresses, become members, and have outweighed influence on voting. This is hard to control for without limiting members to a specified whitelist at deployment. I'm ok with this tradeoff for both simplicity and clarity in the scope of this assignment.
-- **No vote ties:** "passing" is a positive state. It means "majority" by definition. For this reason, I didn't honor ties, and considered a tie as NOT passing.
-- **Quorum % and proposal voting period are fixed:** I did this to appeal directly to the spec. It called for a single DAO contract, not a factory/contract to inherit from.
+```bash
+/.env
 
-### DESIGN EXERCISE 1:
+ALCHEMY_API_KEY=XXX
+RINKEBY_PRIVATE_KEY=xxx
+```
 
-**_Prompt:_** _Per project specs, there is no vote delegation. This means for someone's vote to count, they must manually participate every time. How would you design your contract to allow for non-transitive vote delegation?_
+## Usage
 
-**Answer:**
+1. Front end (on localhost): currently does not have a web front end. Contract interaction must happen directly.
+2. Local testing: tests written in Chai/Mocha using Hardhat/Ethers.js. Run `npx hardhat test` for test suite.
+3. Deployment to Rinkeby: ensure your .env file includes your Rinkeby private key. Then run `npx hardhat run scripts/deploy.js --network rinkeby`. Deploy script only deploys the ProjectFactory.sol contract.
+4. Deployment to other test nets: add your desired network to the `networks` object in `hardhat-config.js` using the following format:
 
-- Use a similar pattern to Compound Comp contract
-- Keep record of delegates and if someone has already delegated. Use two mappings: one to keep track of delegation (address => address), and another to keep track of if an address has already been delegated (address => bool)
-- Include a mapping to count how many votes someone has power over (address => uint256)
-- Include a `delegateBySig()` function that verifies a delegation signature via EIP712 and calls an internal function (`_delegate`) to delegate someone's vote and update contract mappings. Add a require check to ensure an address hasn't already been delegated
-- Update hasVoted mapping on Proposal struct to be a count of how many votes an address has record (address => uint256)
-- Add a require check/throw logic in vote recording function to ensure someone isn't voting more times than they're allowed
+```javascript
+/hardhat.config.js
 
-### DESIGN EXERCISE 2:
+rinkeby: {
+      url: `https://eth-rinkeby.alchemyapi.io/v2/${process.env.ALCHEMY_API_KEY}`,
+      accounts: [`${process.env.RINKEBY_PRIVATE_KEY}`],
+    },
+```
 
-**_Prompt:_** _What are some problems with implementing transitive vote delegation on-chain? (Transitive means: If A delegates to B, and B delegates to C, then C gains voting power from both A and B, while B has no voting power)._
+## Contributing
 
-**Answer:**
+Pull requests are welcome. Feel free to use this project as reference or for learning! It helped me a lot to better understand how to implement a basic DAO and the tradeoffs of different voting mechanisms. Thanks!
 
-- Transitive voting allows someone to lose the intention of their original delegation. If I delegate my vote to someone I support, and they in turn delegate my vote to someone I don't necessarily support, my opinions aren't represented the way I'd hope they are. I would want to implement a way to revoke a delegation, even if it has been passed on transitively.
-- Keeping a full historical record of delegations would be storage intensive. For each person (address), you'd need to keep an ordered list of which people (addresses) they had delegated to.
+## License
+
+[MIT](https://choosealicense.com/licenses/mit/)
