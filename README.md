@@ -16,7 +16,7 @@ DAO to propose, vote on, and purchase NFTs for community ownership. Deployed to 
 
 ## Local setup
 
-1. Clone repository: `git clone https://github.com/brianwatroba/collector-dao.git`
+1. Clone repository: `git clone https://github.com/incrediblegig/Voting-Dao.git`
 2. Install base project dependencies: cd into root, run `npm install`
 3. Add local .env file to project root. Include below env variables (replace keys with your own):
 
