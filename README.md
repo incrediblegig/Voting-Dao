@@ -1,4 +1,4 @@
-# Collector DAO ⚖️
+# Voting DAO 🎇
 
 DAO to propose, vote on, and purchase NFTs for community ownership. Deployed to Ethereum testnet (Rinkeby).
 
